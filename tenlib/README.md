@@ -1,5 +1,9 @@
 # TenLib
 Es un proyecto open Source en donde busco crear un agente editorial con IA para hacer traducciones, mejorar traducciones, ser copiloto al escribir un libro entre otras cosas, esto nace de mi gusto por la lectura japonesa y las pocas traducciones a novelas ligeras que encuentro y ademas mi gusto por la literatura, ahora si el README hecho por IA.
+## Notas del Autor:
+
+No se bien ingles pero lo estoy practicando por lo que si ven errores semanticos en el codigo o en los commits una disculpa de antemano.
+
 # 📚 TenLib
 
 > Un editor literario agéntico de código abierto. Traduce, corrige y escribe libros completos con IA, preservando coherencia y optimizando el uso de tokens.
