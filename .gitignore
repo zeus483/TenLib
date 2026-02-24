@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Tests y coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Variables de entorno y secretos
+.env
+.env.*
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Empaquetado
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
