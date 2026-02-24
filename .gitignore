@@ -33,3 +33,7 @@ build/
 # IDEs
 .idea/
 .vscode/
+
+# Configuración
+config.yaml
+*.yaml
