@@ -5,7 +5,7 @@ from typing import Optional
 
 import yaml
 
-from router.models import ModelConfig
+from tenlib.router.models import ModelConfig
 
 _DEFAULT_CONFIG_PATH = Path.home() / ".tenlib" / "config.yaml"
 

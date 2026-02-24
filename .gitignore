@@ -37,3 +37,4 @@ build/
 # Configuración
 config.yaml
 *.yaml
+.yaml

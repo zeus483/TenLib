@@ -1,0 +1,15 @@
+# config.example.yaml
+models:
+  - name: gemini
+    priority: 1
+    daily_token_limit: 1000000   # Gemini Flash free tier es muy generoso
+    api_key: ${GEMINI_API_KEY}
+    timeout_seconds: 60
+    temperature: 0.3
+
+  - name: claude
+    priority: 2
+    daily_token_limit: 100000
+    api_key: ${ANTHROPIC_API_KEY}
+    timeout_seconds: 60
+    temperature: 0.3

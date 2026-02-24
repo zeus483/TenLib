@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from router.router import Router, AllModelsExhaustedError
-from router.models import ModelResponse
+from tenlib.router.router import Router, AllModelsExhaustedError
+from tenlib.router.models import ModelResponse
 import anthropic
 
 

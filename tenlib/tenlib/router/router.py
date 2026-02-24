@@ -1,7 +1,7 @@
 # router/router.py
 import logging
-from router.base import BaseModel
-from router.models import ModelResponse
+from tenlib.router.base import BaseModel
+from tenlib.router.models import ModelResponse
 
 logger = logging.getLogger(__name__)
 

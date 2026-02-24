@@ -1,6 +1,6 @@
 # router/base.py
 from abc import ABC, abstractmethod
-from router.models import ModelResponse
+from tenlib.router.models import ModelResponse
 
 
 class BaseModel(ABC):

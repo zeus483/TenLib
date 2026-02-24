@@ -1,5 +1,5 @@
 import pytest
-from router.response_parser import parse_model_response
+from tenlib.router.response_parser import parse_model_response
 
 
 class TestResponseParser:
