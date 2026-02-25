@@ -1,5 +1,9 @@
 # TenLib
 Es un proyecto open Source en donde busco crear un agente editorial con IA para hacer traducciones, mejorar traducciones, ser copiloto al escribir un libro entre otras cosas, esto nace de mi gusto por la lectura japonesa y las pocas traducciones a novelas ligeras que encuentro y ademas mi gusto por la literatura, ahora si el README hecho por IA.
+## Notas del Autor:
+
+No se bien ingles pero lo estoy practicando por lo que si ven errores semanticos en el codigo o en los commits una disculpa de antemano.
+
 # 📚 TenLib
 
 > Un editor literario agéntico de código abierto. Traduce, corrige y escribe libros completos con IA, preservando coherencia y optimizando el uso de tokens.
@@ -32,16 +36,16 @@ Además, la mayoría de personas con acceso a múltiples IAs (Claude Pro, GPT Pl
 
 ```bash
 # Traducir un libro de inglés a español
-libreditor translate --book libro.epub --from en --to es
+tenlib translate --book libro.epub --from en --to es
 
 # Corregir o mejorar una traducción existente con el original como referencia
-libreditor fix-translation --book traduccion.epub --reference original.epub
+tenlib fix-translation --book traduccion.epub --reference original.epub
 
 # Abrir la interfaz de revisión humana para un libro procesado
-libreditor review --book mi_libro
+tenlib review --book mi_libro
 
 # Modo co-autor: desarrollar una idea hasta un libro completo
-libreditor write --outline mi_idea.txt
+tenlib write --outline mi_idea.txt
 ```
 
 ---
@@ -149,7 +153,7 @@ La Biblia se versiona en SQLite — puedes revertir a cualquier estado anterior 
 
 Gestiona los tres modelos de forma transparente. El Orchestrator no sabe ni le importa qué modelo procesó cada chunk.
 
-**Configuración** en `~/.libreditor/quota.yaml`:
+**Configuración** en `~/.tenlib/config.yaml`:
 
 ```yaml
 models:
@@ -262,7 +266,7 @@ El proyecto se construye en 4 fases para tener algo funcional desde el primer sp
 - [ ] Llamada a un modelo (Claude API) con prompt de traducción
 - [ ] Reconstrucción del archivo de salida en TXT
 - [ ] Storage SQLite básico (books + chunks)
-- [ ] CLI mínimo: `libreditor translate --book X --from en --to es`
+- [ ] CLI mínimo: `tenlib translate --book X --from en --to es`
 
 **Criterio de éxito:** traducir un libro completo de 100.000 palabras de principio a fin, con output coherente y reanudable.
 
@@ -327,8 +331,8 @@ El proyecto se construye en 4 fases para tener algo funcional desde el primer sp
 ## Instalación (Fase 1)
 
 ```bash
-git clone https://github.com/tu-usuario/libreditor.git
-cd libreditor
+git clone https://github.com/zeus483/TenLib.git
+cd tenlib
 
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -336,7 +340,7 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Configurar modelos
-cp config.example.yaml ~/.libreditor/quota.yaml
+cp config.example.yaml ~/.tenlib/config.yaml
 # Editar el archivo con tus API keys o configuración de planes Pro
 ```
 
@@ -344,38 +348,35 @@ cp config.example.yaml ~/.libreditor/quota.yaml
 
 ## Estructura del proyecto
 
-```
-libreditor/
-├── libreditor/
+```text
+tenlib/
+├── config.example.yaml         # Plantilla de configuración de modelos
+├── requirements.txt            # Dependencias del proyecto
+├── README.md                   # Documentación principal
+├── tenlib/                     # Código fuente principal
 │   ├── __init__.py
-│   ├── cli.py                  # Punto de entrada CLI
-│   ├── orchestrator.py         # Coordinador del pipeline
-│   ├── processor/
-│   │   ├── __init__.py
-│   │   ├── parser.py           # Parse de EPUB, DOCX, TXT
-│   │   └── chunker.py          # Chunking semántico
-│   ├── context/
-│   │   ├── __init__.py
-│   │   ├── bible.py            # Book Bible (estructura + versionado)
-│   │   └── compressor.py       # Compresión de contexto por chunk
-│   ├── router/
-│   │   ├── __init__.py
-│   │   ├── base.py             # Interfaz abstracta de modelo
-│   │   ├── claude.py
-│   │   ├── gpt.py
-│   │   └── gemini.py
-│   ├── quality/
-│   │   ├── __init__.py
-│   │   └── checker.py          # Detección de inconsistencias
-│   ├── storage/
-│   │   ├── __init__.py
-│   │   └── db.py               # SQLite + queries
-│   └── ui/
-│       └── app.py              # Gradio UI
-├── tests/
-├── config.example.yaml
-├── requirements.txt
-└── README.md
+│   ├── factory.py              # Ensamblador de dependencias (DI)
+│   ├── orchestrator.py         # Coordinador principal del pipeline
+│   ├── reconstructor.py        # Generador del archivo final traducido
+│   ├── processor/              # Parseo y segmentación de libros
+│   │   ├── chunker/            # Lógica de división semántica (Chunks)
+│   │   └── parsers/            # Adaptadores para TXT, EPUB, etc.
+│   ├── router/                 # Enrutamiento de modelos de IA
+│   │   ├── base.py             # Interfaz abstracta para modelos
+│   │   ├── claude.py           # Adaptador Anthropic
+│   │   ├── gemini.py           # Adaptador Google
+│   │   ├── prompt_builder.py   # Constructor dinámico de prompts
+│   │   ├── response_parser.py  # Procesador de respuestas JSON
+│   │   └── router.py           # Lógica de rotación y failover
+│   └── storage/                # Persistencia local (SQLite)
+│       ├── db.py               # Configuración base de datos
+│       ├── models.py           # Data classes del dominio persistido
+│       └── repository.py       # Capa de acceso a datos (CRUD)
+└── tests/                      # Suite automatizada de pruebas (pytest)
+    ├── processor/              # Tests de chunkers y parsers
+    ├── router/                 # Tests de parseo JSON y ruteo
+    ├── storage/                # Tests de base de datos
+    └── test_orchestrator.py    # Tests de integración del pipeline
 ```
 
 ---

@@ -9,7 +9,7 @@ from tenlib.router.router import AllModelsExhaustedError
 
 
 # Carga .env una sola vez, antes que cualquier otra cosa
-
+load_dotenv()
 
 # Extensiones soportadas en el MVP
 _SUPPORTED_FORMATS = {".epub", ".txt", ".md"}
