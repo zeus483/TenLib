@@ -2,16 +2,16 @@
 from pathlib import Path
 from typing import Optional
 
-from orchestrator import Orchestrator
-from reconstructor import Reconstructor
-from processor.parsers.factory import ParserFactory
-from processor.chunker.chunker import Chunker
-from processor.chunker.models import ChunkConfig
-from router.router import Router
-from router.claude import ClaudeAdapter
-from router.gemini import GeminiAdapter
-from router.config_loader import load_model_configs
-from storage.repository import Repository
+from tenlib.orchestrator import Orchestrator
+from tenlib.reconstructor import Reconstructor
+from tenlib.processor.parsers.factory import ParserFactory
+from tenlib.processor.chunker.chunker import Chunker
+from tenlib.processor.chunker.models import ChunkConfig
+from tenlib.router.router import Router
+from tenlib.router.claude import ClaudeAdapter
+from tenlib.router.gemini import GeminiAdapter
+from tenlib.router.config_loader import load_model_configs
+from tenlib.storage.repository import Repository
 
 
 def build_orchestrator(

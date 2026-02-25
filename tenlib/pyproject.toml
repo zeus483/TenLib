@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tenlib"
+version = "0.1.0"
+description = "Un editor literario agéntico de código abierto"
+readme = "README.md"
+authors = [
+    { name = "zeus483", email = "cristiancastro@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "click",
+    "PyYAML",
+    "python-dotenv",
+    "anthropic",
+    "google-generativeai",
+    "ebooklib",
+    "pysqlite3"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "flake8"
+]
+
+[project.scripts]
+tenlib = "tenlib.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tenlib*"]

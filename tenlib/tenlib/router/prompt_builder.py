@@ -2,82 +2,116 @@
 from typing import Optional
 
 
-# Separado del builder porque puede crecer:
-# fix_translation, write, summarize tienen sus propias plantillas.
 _TRANSLATE_SYSTEM = """\
-Eres un editor literario profesional especializado en traducción literaria.
-Tu tarea es traducir el fragmento de texto que recibirás preservando:
-- La voz narrativa y el tono del autor
-- Los matices estilísticos y el ritmo de las frases
-- Cualquier rasgo cultural o lingüístico relevante
+    Eres un editor y traductor literario experto. Tu objetivo es traducir el \
+    fragmento que recibirás manteniendo fielmente el tono, el ritmo y los matices \
+    estilísticos del autor, sin omitir ni resumir ninguna frase original.
 
-PARÁMETROS DE TRADUCCIÓN:
-- Idioma origen: {source_lang}
-- Idioma destino: {target_lang}
-- Voz narrativa: {voice}
+    --- CONTEXTO DE LA OBRA ---
+    - Idioma origen: {source_lang}
+    - Idioma destino: {target_lang}
+    - Voz narrativa general: {voice}
 
-DECISIONES DE ESTILO TOMADAS (respétalas sin excepción):
-{decisions}
+    --- BIBLIA DEL LIBRO (reglas estrictas e inquebrantables) ---
 
-GLOSARIO (estos términos tienen traducción fija — no los alteres):
-{glossary}
+    GLOSARIO (términos con traducción fija — NO alterar):
+    {glossary}
 
-CONTEXTO DE CONTINUIDAD (lo que ocurrió justo antes de este fragmento):
-{last_scene}
+    DECISIONES DE ESTILO (aplicar sin excepción):
+    {decisions}
 
-INSTRUCCIÓN DE RESPUESTA:
-Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
-{{
-  "translation": "el texto traducido completo",
-  "confidence": 0.0,
-  "notes": "decisiones tomadas, dudas o advertencias"
-}}
+    PERSONAJES (tono y personalidad para los diálogos):
+    {characters}
 
-Reglas del JSON:
-- confidence es un float entre 0.0 y 1.0
-- 1.0 = traducción directa y sin ambigüedad
-- < 0.75 = había ambigüedad, múltiples opciones válidas, o expresión idiomática difícil
-- notes documenta las decisiones importantes (no escribas "ninguna" — siempre hay algo)
-- Sin texto fuera del JSON
-- Sin bloques de código markdown
-- Sin explicaciones previas ni posteriores
+    --- CONTINUIDAD ---
+    Escena inmediatamente anterior: {last_scene}
 
-FRAGMENTO A TRADUCIR:
-"""
+    --- INSTRUCCIONES DE SALIDA ---
+    Responde ÚNICAMENTE con un objeto JSON válido.
+    Para asegurar la máxima calidad, primero analiza los retos del texto, \
+    luego asigna tu nivel de confianza, y finalmente entrega la traducción.
 
-_DECISIONS_EMPTY = "Ninguna todavía — este es el primer fragmento."
-_GLOSSARY_EMPTY  = "Sin glosario todavía — extrae términos relevantes que encuentres."
-_LAST_SCENE_EMPTY = "Inicio del libro — no hay contexto previo."
+    Estructura estricta del JSON:
+    {{
+    "notes": "Analiza los desafíos del fragmento (modismos, tono, jerga) y documenta \
+    las decisiones de traducción tomadas. Prohibido dejar vacío.",
+    "confidence": 0.0,
+    "translation": "El texto traducido completo, respetando párrafos y saltos de línea del original."
+    }}
+
+    Reglas del JSON:
+    - "notes" va primero — es tu proceso de razonamiento antes de traducir.
+    - "confidence": float entre 0.0 y 1.0.
+        * 1.0 = traducción directa, sin pérdida de matices.
+        * < 0.75 = ambigüedad, múltiples opciones válidas, o expresiones idiomáticas complejas.
+    - No omitas ni resumas ninguna frase del fragmento original.
+    - Si usas bloque markdown, el contenido interno debe ser JSON válido y parseable.
+    """
+
+# Fallbacks — nunca dejan secciones vacías en el prompt
+_VOICE_DEFAULT       = "narrador en tercera persona, tiempo pasado"
+_GLOSSARY_EMPTY      = "Sin glosario todavía — extrae términos relevantes que encuentres."
+_DECISIONS_EMPTY     = "Ninguna todavía — este es el primer fragmento."
+_CHARACTERS_EMPTY    = "Sin perfiles definidos todavía — infiere el tono de cada personaje del texto."
+_LAST_SCENE_EMPTY    = "Inicio del libro — no hay contexto previo."
 
 
 def build_translate_prompt(
-    source_lang:  str,
-    target_lang:  str,
-    voice:        str        = "narrador en tercera persona",
-    decisions:    list[str]  = None,
-    glossary:     dict       = None,
-    last_scene:   str        = None,
+    source_lang: str,
+    target_lang: str,
+    voice:       str             = _VOICE_DEFAULT,
+    decisions:   list[str]       = None,
+    glossary:    dict            = None,
+    characters:  dict            = None,   # ← nuevo parámetro
+    last_scene:  Optional[str]   = None,
 ) -> str:
     """
     Construye el system prompt para el modo traducción.
-    Todos los parámetros opcionales tienen fallbacks seguros —
-    nunca deja secciones vacías que confundan al modelo.
+
+    El fragmento a traducir NO va aquí — viaja como mensaje de usuario
+    en la llamada al modelo. Esto mantiene separadas las instrucciones
+    del contenido y mejora la adherencia a las reglas en todos los modelos.
     """
-    decisions_str = (
-        "\n".join(f"- {d}" for d in decisions)
-        if decisions else _DECISIONS_EMPTY
-    )
-
-    glossary_str = (
-        "\n".join(f"- {k} → {v}" for k, v in glossary.items())
-        if glossary else _GLOSSARY_EMPTY
-    )
-
     return _TRANSLATE_SYSTEM.format(
         source_lang = source_lang,
         target_lang = target_lang,
-        voice       = voice,
-        decisions   = decisions_str,
-        glossary    = glossary_str,
+        voice       = voice or _VOICE_DEFAULT,
+        glossary    = _format_glossary(glossary),
+        decisions   = _format_decisions(decisions),
+        characters  = _format_characters(characters),
         last_scene  = last_scene or _LAST_SCENE_EMPTY,
     )
+
+
+# ------------------------------------------------------------------
+# Formatters internos — cada sección tiene su propia lógica
+# ------------------------------------------------------------------
+
+def _format_glossary(glossary: Optional[dict]) -> str:
+    if not glossary:
+        return _GLOSSARY_EMPTY
+    return "\n".join(f"  - {src} → {tgt}" for src, tgt in glossary.items())
+
+
+def _format_decisions(decisions: Optional[list[str]]) -> str:
+    if not decisions:
+        return _DECISIONS_EMPTY
+    return "\n".join(f"  - {d}" for d in decisions)
+
+
+def _format_characters(characters: Optional[dict]) -> str:
+    """
+    Formatea el apartado de personajes de la Book Bible.
+
+    Entrada esperada (estructura del README):
+    {
+        "Kvothe": "protagonista, voz activa, habla directo y sin rodeos",
+        "Chronicler": "escriba, tono formal y observador"
+    }
+    """
+    if not characters:
+        return _CHARACTERS_EMPTY
+    lines = []
+    for name, description in characters.items():
+        lines.append(f"  - {name}: {description}")
+    return "\n".join(lines)

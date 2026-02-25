@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
-from router.base import BaseModel
-from router.models import ModelConfig, ModelResponse
-from router.response_parser import parse_model_response
+from tenlib.router.base import BaseModel
+from tenlib.router.models import ModelConfig, ModelResponse
+from tenlib.router.response_parser import parse_model_response
 
 if TYPE_CHECKING:
-    from storage.repository import Repository
+    from tenlib.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
