@@ -157,8 +157,7 @@ class Orchestrator:
 
     def _parse_and_store(self, path: Path, book_id: int) -> None:
         """Parsea el archivo, chunkea y guarda todos en PENDING."""
-        parser   = self._parser_factory.get_parser(str(path))
-        raw_book = parser.parse(str(path))
+        raw_book = self._parser_factory.parse(str(path))
         chunks   = self._chunker.chunk(raw_book)
         self._repo.save_chunks(book_id, chunks)
         self._log(f"{len(chunks)} chunks creados y guardados")

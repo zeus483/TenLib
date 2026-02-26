@@ -81,7 +81,7 @@ class Repository:
                 book_id,
                 chunk.index,
                 chunk.original,
-                chunk.token_estimate,
+                chunk.token_estimated,
                 chunk.source_section,
                 ChunkStatus.PENDING.value,
                 "[]",
