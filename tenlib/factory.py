@@ -28,27 +28,21 @@ def build_orchestrator(
     config_path: Optional[str]  = None,
     output_dir:  Optional[Path] = None,
     chunk_size:  str            = "standard",
-    pdf_mode:    bool           = False,
 ) -> Orchestrator:
     """
     Ensambla el Orchestrator con todas sus dependencias.
     Punto de entrada único para el CLI y los tests de integración.
 
     chunk_size: "standard" | "large" | "xlarge" — controla el tamaño de los chunks.
-    pdf_mode:   si True, inyecta PdfReconstructor para preservar imágenes del PDF.
+    El output siempre es TXT, independientemente del formato de entrada.
     """
     repo   = Repository(db_path=db_path)
     models = _build_models(repo, config_path)
     router = Router(models)
 
-    preset     = _CHUNK_PRESETS.get(chunk_size, _CHUNK_PRESETS["standard"])
-    chunk_cfg  = ChunkConfig(**preset)
-
-    if pdf_mode:
-        from tenlib.reconstructor_pdf import PdfReconstructor
-        reconstructor = PdfReconstructor(repo, output_dir)
-    else:
-        reconstructor = Reconstructor(repo, output_dir)
+    preset        = _CHUNK_PRESETS.get(chunk_size, _CHUNK_PRESETS["standard"])
+    chunk_cfg     = ChunkConfig(**preset)
+    reconstructor = Reconstructor(repo, output_dir)
 
     return Orchestrator(
         repo            = repo,

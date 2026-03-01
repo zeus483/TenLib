@@ -55,46 +55,50 @@ class PdfReconstructor:
     def _build_pdf(self, chunks, book_id: int, output_filename: str, source_path: str) -> Path:
         import fitz  # pymupdf
 
-        # Construir mapa: source_section → lista de textos traducidos (en orden)
-        section_texts: dict[int, list[str]] = {}
-        for chunk in sorted(chunks, key=lambda c: c.chunk_index):
-            text = self._resolve_chunk_text(chunk)
-            section = chunk.source_section
-            section_texts.setdefault(section, []).append(text)
+        # Unir todo el texto traducido en el orden correcto de chunks
+        all_translated = "\n\n".join(
+            self._resolve_chunk_text(c)
+            for c in sorted(chunks, key=lambda c: c.chunk_index)
+        )
 
         doc = fitz.open(source_path)
         output_path = self._output_dir / output_filename.replace(".txt", ".pdf")
 
+        # Identificar páginas con contenido textual real (ignorar portadas, páginas de solo ilustraciones)
+        text_pages: list[tuple[int, list]] = []
         for page_idx, page in enumerate(doc):
-            if page_idx not in section_texts:
-                continue
-
-            translated_parts = section_texts[page_idx]
-            translated_full  = "\n\n".join(translated_parts)
-
-            # Obtener bloques de texto de la página
             blocks = page.get_text("blocks")
-            text_blocks = [b for b in blocks if b[6] == 0]  # type 0 = texto
+            text_blocks = [b for b in blocks if b[6] == 0 and len(b[4].strip().split()) >= 3]
+            if text_blocks:
+                text_pages.append((page_idx, text_blocks))
 
-            if not text_blocks:
-                continue
+        if not text_pages:
+            doc.close()
+            return self._build_txt(chunks, output_filename)
 
-            # Calcular bounding box que engloba todo el texto de la página
+        # Distribuir la traducción proporcionalmente según el peso de texto original de cada página.
+        # Esto funciona independientemente de cómo el parser agrupó las páginas en secciones.
+        page_word_counts = [
+            sum(len(b[4].split()) for b in blocks)
+            for _, blocks in text_pages
+        ]
+        total_words = sum(page_word_counts) or 1
+        page_translations = _distribute_text(all_translated, page_word_counts, total_words)
+
+        # Aplicar traducción a cada página con contenido
+        for (page_idx, text_blocks), page_translation in zip(text_pages, page_translations):
+            page = doc[page_idx]
+
             x0 = min(b[0] for b in text_blocks)
             y0 = min(b[1] for b in text_blocks)
             x1 = max(b[2] for b in text_blocks)
             y1 = max(b[3] for b in text_blocks)
             text_rect = fitz.Rect(x0, y0, x1, y1)
 
-            # Estimar tamaño de fuente original del primer bloque
             original_fontsize = _estimate_fontsize(text_blocks[0][4])
-
-            # Redactar todo el texto existente
             page.add_redact_annot(text_rect)
             page.apply_redactions()
-
-            # Insertar texto traducido ajustando fuente si no cabe
-            _insert_text_fitting(page, text_rect, translated_full, original_fontsize)
+            _insert_text_fitting(page, text_rect, page_translation, original_fontsize)
 
         doc.save(str(output_path))
         doc.close()
@@ -132,6 +136,52 @@ def _estimate_fontsize(block_text: str, default: float = 11.0) -> float:
     usamos el tamaño por defecto como punto de partida conservador.
     """
     return default
+
+
+def _distribute_text(text: str, word_counts: list[int], total_words: int) -> list[str]:
+    """
+    Divide el texto traducido entre páginas proporcionalmente al número de palabras
+    originales de cada página. Intenta respetar límites de oración al cortar.
+    """
+    if not text.strip():
+        return [""] * len(word_counts)
+
+    words = text.split()
+    total_translated = len(words)
+    result: list[str] = []
+    start = 0
+
+    for i, count in enumerate(word_counts):
+        if i == len(word_counts) - 1:
+            result.append(" ".join(words[start:]))
+        else:
+            target = start + round(count / total_words * total_translated)
+            target = min(target, len(words))
+            target = _snap_sentence_boundary(words, target)
+            result.append(" ".join(words[start:target]))
+            start = target
+
+    return result
+
+
+def _snap_sentence_boundary(words: list[str], target: int) -> int:
+    """
+    Ajusta el punto de corte al final de la oración más cercana (±20 palabras).
+    Busca primero hacia adelante (para no acortar demasiado) y luego hacia atrás.
+    """
+    window = 20
+    hi = min(len(words), target + window)
+    lo = max(0, target - window)
+
+    for i in range(target, hi):
+        if i > 0 and words[i - 1].rstrip("\"'»)").endswith((".", "!", "?")):
+            return i
+
+    for i in range(target, lo, -1):
+        if i > 0 and words[i - 1].rstrip("\"'»)").endswith((".", "!", "?")):
+            return i
+
+    return target
 
 
 def _insert_text_fitting(page, rect, text: str, original_fontsize: float) -> None:

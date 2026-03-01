@@ -72,10 +72,8 @@ def translate(book: str, source_lang: str, target_lang: str, chunk_size: str):
         _abort("El idioma de origen y destino no pueden ser el mismo.")
 
     # ── Ensamblar pipeline ────────────────────────────────────────
-    from pathlib import Path
-    pdf_mode = Path(book).suffix.lower() == ".pdf"
     try:
-        orchestrator = build_orchestrator(chunk_size=chunk_size, pdf_mode=pdf_mode)
+        orchestrator = build_orchestrator(chunk_size=chunk_size)
     except FileNotFoundError as e:
         _abort(str(e))
     except RuntimeError as e:
@@ -179,10 +177,8 @@ def fix(translation: str, original: str | None, target_lang: str, source_lang: s
     ):
         _abort("El idioma de origen y destino no pueden ser el mismo.")
 
-    from pathlib import Path
-    pdf_mode = Path(translation).suffix.lower() == ".pdf"
     try:
-        orchestrator = build_orchestrator(chunk_size=chunk_size, pdf_mode=pdf_mode)
+        orchestrator = build_orchestrator(chunk_size=chunk_size)
     except FileNotFoundError as e:
         _abort(str(e))
     except RuntimeError as e:
