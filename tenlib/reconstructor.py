@@ -23,7 +23,7 @@ class Reconstructor:
         self._repo       = repo
         self._output_dir = output_dir or _OUTPUT_DIR
 
-    def build(self, book_id: int, output_filename: str) -> Path:
+    def build(self, book_id: int, output_filename: str, source_path: str | None = None) -> Path:
         """
         Construye el archivo de salida y devuelve la ruta.
         Si un chunk está FLAGGED sin traducción, inserta el original

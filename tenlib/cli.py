@@ -11,8 +11,8 @@ from tenlib.router.router import AllModelsExhaustedError
 # Carga .env una sola vez, antes que cualquier otra cosa
 load_dotenv()
 
-# Extensiones soportadas en el MVP
-_SUPPORTED_FORMATS = {".epub", ".txt", ".md"}
+# Extensiones soportadas
+_SUPPORTED_FORMATS = {".epub", ".txt", ".md", ".pdf"}
 
 
 # ------------------------------------------------------------------
@@ -53,7 +53,14 @@ def main():
     metavar  = "LANG",
     help     = "Idioma de destino (ej: es, en)",
 )
-def translate(book: str, source_lang: str, target_lang: str):
+@click.option(
+    "--chunk-size",
+    default      = "standard",
+    show_default = True,
+    type         = click.Choice(["standard", "large", "xlarge"], case_sensitive=False),
+    help         = "Tamaño de los chunks: standard (800-2000), large (1200-3500), xlarge (2000-5000 tokens)",
+)
+def translate(book: str, source_lang: str, target_lang: str, chunk_size: str):
     """Traduce un libro completo preservando voz narrativa y coherencia."""
 
     # ── Validaciones de entrada ───────────────────────────────────
@@ -65,8 +72,10 @@ def translate(book: str, source_lang: str, target_lang: str):
         _abort("El idioma de origen y destino no pueden ser el mismo.")
 
     # ── Ensamblar pipeline ────────────────────────────────────────
+    from pathlib import Path
+    pdf_mode = Path(book).suffix.lower() == ".pdf"
     try:
-        orchestrator = build_orchestrator()
+        orchestrator = build_orchestrator(chunk_size=chunk_size, pdf_mode=pdf_mode)
     except FileNotFoundError as e:
         _abort(str(e))
     except RuntimeError as e:
@@ -81,7 +90,7 @@ def translate(book: str, source_lang: str, target_lang: str):
         )
 
     except BookAlreadyDoneError:
-        _handle_already_done(book, orchestrator)
+        _handle_already_done(book)
         return
 
     except AllModelsExhaustedError as e:
@@ -115,15 +124,121 @@ def translate(book: str, source_lang: str, target_lang: str):
 
 
 # ------------------------------------------------------------------
-# Stubs — visión completa del proyecto en --help
+# tenlib fix
 # ------------------------------------------------------------------
 
 @main.command()
-@click.option("--book", "-b", required=True, help="Libro con traducción existente")
-@click.option("--reference", "-r", required=True, help="Original como referencia")
-def fix(book: str, reference: str):
-    """[Próximamente] Corrige o mejora una traducción existente."""
-    click.echo("[tenlib] El comando 'fix' estará disponible en la Fase 4.")
+@click.option(
+    "--translation",
+    required = True,
+    type     = click.Path(exists=False),
+    help     = "Archivo con la traducción existente (.epub, .txt, .md)",
+)
+@click.option(
+    "--original",
+    required = False,
+    type     = click.Path(exists=False),
+    help     = "Archivo original de referencia (.epub, .txt, .md). Opcional.",
+)
+@click.option(
+    "--to", "target_lang",
+    required = True,
+    metavar  = "LANG",
+    help     = "Idioma destino de la traducción corregida (ej: es, en)",
+)
+@click.option(
+    "--from", "source_lang",
+    default      = "auto",
+    show_default = True,
+    metavar      = "LANG",
+    help         = "Idioma del original (opcional). Usa 'auto' si no lo sabes.",
+)
+@click.option(
+    "--chunk-size",
+    default      = "standard",
+    show_default = True,
+    type         = click.Choice(["standard", "large", "xlarge"], case_sensitive=False),
+    help         = "Tamaño de los chunks: standard (800-2000), large (1200-3500), xlarge (2000-5000 tokens)",
+)
+def fix(translation: str, original: str | None, target_lang: str, source_lang: str, chunk_size: str):
+    """
+    Corrige una traducción existente.
+    - Con --original: corrección contra referencia.
+    - Sin --original: fix-style (mejora fluidez/sintaxis sin referencia).
+    """
+    _validate_file(translation)
+    if original:
+        _validate_file(original)
+    _validate_lang(target_lang, "--to")
+    _validate_lang(source_lang, "--from")
+
+    if (
+        original
+        and source_lang.lower() != "auto"
+        and source_lang.lower() == target_lang.lower()
+    ):
+        _abort("El idioma de origen y destino no pueden ser el mismo.")
+
+    from pathlib import Path
+    pdf_mode = Path(translation).suffix.lower() == ".pdf"
+    try:
+        orchestrator = build_orchestrator(chunk_size=chunk_size, pdf_mode=pdf_mode)
+    except FileNotFoundError as e:
+        _abort(str(e))
+    except RuntimeError as e:
+        _abort(str(e))
+
+    try:
+        if original:
+            result = orchestrator.run_fix(
+                original_path    = original,
+                translation_path = translation,
+                source_lang      = source_lang.lower(),
+                target_lang      = target_lang.lower(),
+            )
+        else:
+            result = orchestrator.run_fix_style(
+                translation_path = translation,
+                source_lang      = source_lang.lower(),
+                target_lang      = target_lang.lower(),
+            )
+
+    except BookAlreadyDoneError:
+        _handle_already_done(translation, action_label="corregido")
+        return
+
+    except AllModelsExhaustedError as e:
+        _error(
+            f"Sin modelos disponibles. {e}\n"
+            f"Reejecutando el mismo comando cuando tengas quota disponible "
+            f"el proceso se reanudará automáticamente."
+        )
+        sys.exit(2)
+
+    except FileNotFoundError as e:
+        _abort(str(e))
+
+    except KeyboardInterrupt:
+        click.echo(
+            "\n[tenlib] Proceso interrumpido. "
+            "Ejecuta el mismo comando para reanudarlo desde donde quedó."
+        )
+        sys.exit(0)
+
+    except Exception as e:
+        _error(
+            f"Error inesperado: {type(e).__name__}: {e}\n\n"
+            f"Si el problema persiste, abre un issue en:\n"
+            f"https://github.com/tu-usuario/tenlib/issues"
+        )
+        sys.exit(1)
+
+    _print_summary(result)
+
+
+# ------------------------------------------------------------------
+# Stubs — visión completa del proyecto en --help
+# ------------------------------------------------------------------
 
 
 @main.command()
@@ -181,12 +296,12 @@ def _validate_lang(code: str, option: str) -> None:
         _abort(f"{option}: código de idioma demasiado largo: '{code}'")
 
 
-def _handle_already_done(book: str, orchestrator) -> None:
+def _handle_already_done(book: str, action_label: str = "traducido") -> None:
     """
     El libro ya está completamente procesado.
     Pregunta al usuario antes de reprocesar desde cero.
     """
-    click.echo("\n[tenlib] Este libro ya fue traducido completamente.")
+    click.echo(f"\n[tenlib] Este libro ya fue {action_label} completamente.")
 
     if click.confirm("¿Deseas volver a procesarlo desde cero?", default=False):
         # TODO Fase 2: reset del libro en storage
@@ -204,9 +319,14 @@ def _handle_already_done(book: str, orchestrator) -> None:
 
 def _print_summary(result) -> None:
     """Imprime el resumen final del pipeline."""
+    pending = result.total_chunks - result.translated - result.flagged
+
     click.echo("")
     click.echo("─" * 50)
-    click.echo(f"[tenlib] ✓ Proceso completado")
+    if pending > 0:
+        click.echo(f"[tenlib] ⚠ Proceso pausado")
+    else:
+        click.echo(f"[tenlib] ✓ Proceso completado")
     click.echo(f"[tenlib]   Total chunks : {result.total_chunks}")
     click.echo(f"[tenlib]   Traducidos   : {result.translated}")
 
@@ -217,6 +337,9 @@ def _print_summary(result) -> None:
                 fg="yellow",
             )
         )
+
+    if pending > 0:
+        click.echo(f"[tenlib]   Pendientes   : {pending}")
 
     if result.was_resumed:
         click.echo(f"[tenlib]   Modo         : reanudación")

@@ -1,13 +1,18 @@
 # storage/repository.py
 import json
+import logging
 import sqlite3
 from datetime import date, datetime, timezone
+from numbers import Integral
+from typing import Optional
 
 from tenlib.storage.db import get_connection, init_schema
 from tenlib.storage.models import (
     BookMode, BookStatus, ChunkStatus,
     StoredBook, StoredChunk,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Repository:
@@ -76,12 +81,18 @@ class Repository:
         Bulk insert de chunks. Usa INSERT OR IGNORE para ser idempotente:
         si el proceso se interrumpe y se relanza, no explota por el UNIQUE.
         """
+        def _as_int(value) -> int | None:
+            if isinstance(value, Integral) and not isinstance(value, bool):
+                return int(value)
+            return None
+
         rows = [
             (
                 book_id,
                 chunk.index,
                 chunk.original,
-                chunk.token_estimated,
+                _as_int(getattr(chunk, "token_estimated", None))
+                or _as_int(getattr(chunk, "token_estimate", None)),
                 chunk.source_section,
                 ChunkStatus.PENDING.value,
                 "[]",
@@ -175,6 +186,64 @@ class Repository:
             (model, today),
         ).fetchone()
         return row["tokens_used"] if row else 0
+
+    # ------------------------------------------------------------------
+    # Bible
+    # ------------------------------------------------------------------
+
+    def save_bible(self, book_id: int, bible: "BookBible") -> int:
+        """
+        Guarda una nueva versión de la Bible.
+        Siempre inserta una fila nueva (versionado inmutable).
+        Retorna el número de versión asignado.
+        """
+        from datetime import datetime, timezone
+        updated_at = datetime.now(timezone.utc).isoformat()
+
+        # Obtener versión actual para incrementar
+        row = self._conn.execute(
+            "SELECT MAX(version) as max_v FROM bible WHERE book_id = ?",
+            (book_id,),
+        ).fetchone()
+
+        next_version = (row["max_v"] or 0) + 1
+
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO bible (book_id, version, content_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (book_id, next_version, bible.to_json(), updated_at),
+            )
+
+        return next_version
+
+    def get_latest_bible(self, book_id: int) -> Optional["BookBible"]:
+        """
+        Carga la versión más reciente de la Bible para un libro.
+        Devuelve None si todavía no existe (libro nuevo sin Bible).
+        """
+        from tenlib.context.bible import BookBible
+
+        row = self._conn.execute(
+            """
+            SELECT content_json FROM bible
+            WHERE book_id = ?
+            ORDER BY version DESC
+            LIMIT 1
+            """,
+            (book_id,),
+        ).fetchone()
+
+        if not row:
+            return None
+
+        try:
+            return BookBible.from_json(row["content_json"])
+        except Exception as e:
+            logger.warning("Error deserializando Bible del libro %d: %s", book_id, e)
+            return None
 
     # ------------------------------------------------------------------
     # Mapeo de rows a dataclasses

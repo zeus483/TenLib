@@ -331,8 +331,8 @@ class TestParserFactory:
 
     def test_raises_on_unsupported_format(self, factory, tmp_path):
         from tenlib.processor.parsers.factory import UnsupportedFormatError
-        f = tmp_path / "libro.pdf"
-        f.write_bytes(b"%PDF-1.4")
+        f = tmp_path / "libro.docx"
+        f.write_bytes(b"PK\x03\x04")  # cabecera ZIP (formato docx)
         with pytest.raises(UnsupportedFormatError):
             factory.parse(str(f))
 

@@ -23,7 +23,8 @@ dependencies = [
     "anthropic",
     "google-generativeai",
     "ebooklib",
-    "pysqlite3"
+    "pysqlite3",
+    "pymupdf"
 ]
 
 [project.optional-dependencies]
@@ -38,3 +39,7 @@ tenlib = "tenlib.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tenlib*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tenlib"]

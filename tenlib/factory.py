@@ -12,26 +12,52 @@ from tenlib.router.claude import ClaudeAdapter
 from tenlib.router.gemini import GeminiAdapter
 from tenlib.router.config_loader import load_model_configs
 from tenlib.storage.repository import Repository
+from tenlib.context.compressor import BibleCompressor
+from tenlib.context.extractor import BibleExtractor
+
+
+_CHUNK_PRESETS: dict[str, dict] = {
+    "standard": {"min_tokens": 800,  "max_tokens": 2000, "target_tokens": 1400},
+    "large":    {"min_tokens": 1200, "max_tokens": 3500, "target_tokens": 2500},
+    "xlarge":   {"min_tokens": 2000, "max_tokens": 5000, "target_tokens": 3500},
+}
 
 
 def build_orchestrator(
-    db_path:     Optional[str] = None,
-    config_path: Optional[str] = None,
+    db_path:     Optional[str]  = None,
+    config_path: Optional[str]  = None,
     output_dir:  Optional[Path] = None,
+    chunk_size:  str            = "standard",
+    pdf_mode:    bool           = False,
 ) -> Orchestrator:
     """
     Ensambla el Orchestrator con todas sus dependencias.
     Punto de entrada único para el CLI y los tests de integración.
+
+    chunk_size: "standard" | "large" | "xlarge" — controla el tamaño de los chunks.
+    pdf_mode:   si True, inyecta PdfReconstructor para preservar imágenes del PDF.
     """
     repo   = Repository(db_path=db_path)
     models = _build_models(repo, config_path)
+    router = Router(models)
+
+    preset     = _CHUNK_PRESETS.get(chunk_size, _CHUNK_PRESETS["standard"])
+    chunk_cfg  = ChunkConfig(**preset)
+
+    if pdf_mode:
+        from tenlib.reconstructor_pdf import PdfReconstructor
+        reconstructor = PdfReconstructor(repo, output_dir)
+    else:
+        reconstructor = Reconstructor(repo, output_dir)
 
     return Orchestrator(
-        repo           = repo,
-        parser_factory = ParserFactory(),
-        chunker        = Chunker(config=ChunkConfig()),
-        router         = Router(models),
-        reconstructor  = Reconstructor(repo, output_dir),
+        repo            = repo,
+        parser_factory  = ParserFactory(),
+        chunker         = Chunker(config=chunk_cfg),
+        router          = router,
+        reconstructor   = reconstructor,
+        extractor       = BibleExtractor(model=router),  # usa failover del router
+        compressor      = BibleCompressor(),
     )
 
 

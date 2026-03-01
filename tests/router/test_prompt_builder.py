@@ -1,6 +1,10 @@
 # tests/router/test_prompt_builder.py
 import pytest
-from tenlib.router.prompt_builder import build_translate_prompt
+from tenlib.router.prompt_builder import (
+    build_translate_prompt,
+    build_fix_prompt,
+    build_polish_prompt,
+)
 
 
 class TestPromptBuilder:
@@ -63,3 +67,50 @@ class TestPromptBuilder:
             last_scene="Kvothe acaba de llegar a la Universidad"
         )
         assert "Kvothe acaba de llegar a la Universidad" in prompt
+
+
+class TestFixPromptBuilder:
+
+    def test_contiene_idiomas(self):
+        prompt = build_fix_prompt("en", "es")
+        assert "en" in prompt
+        assert "es" in prompt
+
+    def test_instruye_corregir_no_traducir_desde_cero(self):
+        prompt = build_fix_prompt("en", "es")
+        assert "CORREGIR" in prompt
+        assert "No traduzcas desde cero" in prompt
+
+    def test_confidence_define_cambios_sobre_borrador(self):
+        prompt = build_fix_prompt("en", "es")
+        assert "borrador muy bueno; retoques menores" in prompt
+
+    def test_orden_cot_en_json_schema(self):
+        prompt = build_fix_prompt("en", "es")
+        pos_notes = prompt.index('"notes"')
+        pos_confidence = prompt.index('"confidence"')
+        pos_translation = prompt.index('"translation"')
+        assert pos_notes < pos_confidence < pos_translation
+
+
+class TestPolishPromptBuilder:
+
+    def test_contiene_target_lang(self):
+        prompt = build_polish_prompt("es")
+        assert "es" in prompt
+
+    def test_define_mejoras_sin_original(self):
+        prompt = build_polish_prompt("es")
+        assert "sin inventar información nueva" in prompt
+        assert "fluidez" in prompt.lower()
+
+    def test_no_markdown_en_salida(self):
+        prompt = build_polish_prompt("es")
+        assert "No uses markdown" in prompt
+
+    def test_orden_json_schema(self):
+        prompt = build_polish_prompt("es")
+        pos_notes = prompt.index('"notes"')
+        pos_confidence = prompt.index('"confidence"')
+        pos_translation = prompt.index('"translation"')
+        assert pos_notes < pos_confidence < pos_translation

@@ -3,6 +3,7 @@ from tenlib.processor.models import RawBook
 from .base import BaseParser
 from .txt_parser import TxtParser
 from .epub_parser import EpubParser
+from .pdf_parser import PdfParser
 
 
 class UnsupportedFormatError(Exception):
@@ -29,6 +30,7 @@ class ParserFactory:
     # Parsers disponibles por defecto — en orden de prioridad
     _DEFAULT_PARSERS: list[BaseParser] = [
         EpubParser(),
+        PdfParser(),
         TxtParser(),   # va último porque .txt es el fallback más permisivo
     ]
 

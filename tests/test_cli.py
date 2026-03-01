@@ -26,6 +26,20 @@ def book_file(tmp_path) -> Path:
     return f
 
 
+@pytest.fixture
+def original_file(tmp_path) -> Path:
+    f = tmp_path / "original.txt"
+    f.write_text("Original de prueba.")
+    return f
+
+
+@pytest.fixture
+def translation_file(tmp_path) -> Path:
+    f = tmp_path / "traduccion.txt"
+    f.write_text("Traducción previa de prueba.")
+    return f
+
+
 def make_pipeline_result(flagged: int = 0) -> PipelineResult:
     return PipelineResult(
         book_id      = 1,
@@ -51,6 +65,19 @@ def run_translate(runner, book, source="en", target="es"):
     ])
 
 
+def run_fix(runner, translation, original=None, target="es", source="auto"):
+    """Shortcut para invocar el comando fix."""
+    args = [
+        "fix",
+        "--translation", str(translation),
+        "--from",        source,
+        "--to",          target,
+    ]
+    if original is not None:
+        args.extend(["--original", str(original)])
+    return runner.invoke(main, args)
+
+
 # ------------------------------------------------------------------
 # Validaciones de entrada
 # ------------------------------------------------------------------
@@ -63,7 +90,7 @@ class TestValidaciones:
         assert "no encontrado" in result.output.lower()
 
     def test_formato_no_soportado(self, runner, tmp_path):
-        f = tmp_path / "libro.pdf"
+        f = tmp_path / "libro.docx"
         f.write_text("contenido")
         result = run_translate(runner, f)
         assert result.exit_code == 1
@@ -148,6 +175,25 @@ class TestFlujoFeliz:
             assert "3" in result.output
             assert "revisión" in result.output.lower()
 
+    def test_resumen_muestra_pausado_si_hay_pending(self, runner, book_file):
+        paused_result = PipelineResult(
+            book_id=1,
+            output_path=Path("/tmp/libro_es.txt"),
+            total_chunks=10,
+            translated=2,
+            flagged=1,
+            was_resumed=False,
+        )
+        with patch("tenlib.cli.build_orchestrator") as mock_factory:
+            mock_orch = MagicMock()
+            mock_orch.run.return_value = paused_result
+            mock_factory.return_value = mock_orch
+
+            result = run_translate(runner, book_file)
+
+            assert "pausado" in result.output.lower()
+            assert "pendientes" in result.output.lower()
+
     def test_lang_codes_se_normalizan_a_lowercase(self, runner, book_file):
         with patch("tenlib.cli.build_orchestrator") as mock_factory:
             mock_orch = MagicMock()
@@ -162,6 +208,70 @@ class TestFlujoFeliz:
             call_kwargs = mock_orch.run.call_args.kwargs
             assert call_kwargs["source_lang"] == "en"
             assert call_kwargs["target_lang"] == "es"
+
+
+class TestFixCommand:
+
+    def test_fix_invoca_orchestrator_con_parametros_correctos(
+        self, runner, translation_file, original_file
+    ):
+        with patch("tenlib.cli.build_orchestrator") as mock_factory:
+            mock_orch = MagicMock()
+            mock_orch.run_fix.return_value = make_pipeline_result()
+            mock_factory.return_value = mock_orch
+
+            result = run_fix(runner, translation_file, original_file, target="es")
+
+            assert result.exit_code == 0
+            mock_orch.run_fix.assert_called_once_with(
+                original_path    = str(original_file),
+                translation_path = str(translation_file),
+                source_lang      = "auto",
+                target_lang      = "es",
+            )
+
+    def test_fix_sin_original_invoca_fix_style(
+        self, runner, translation_file
+    ):
+        with patch("tenlib.cli.build_orchestrator") as mock_factory:
+            mock_orch = MagicMock()
+            mock_orch.run_fix_style.return_value = make_pipeline_result()
+            mock_factory.return_value = mock_orch
+
+            result = run_fix(runner, translation_file, original=None, target="es")
+
+            assert result.exit_code == 0
+            mock_orch.run_fix_style.assert_called_once_with(
+                translation_path = str(translation_file),
+                source_lang      = "auto",
+                target_lang      = "es",
+            )
+
+    def test_fix_muestra_resumen(self, runner, translation_file, original_file):
+        with patch("tenlib.cli.build_orchestrator") as mock_factory:
+            mock_orch = MagicMock()
+            mock_orch.run_fix.return_value = make_pipeline_result(flagged=2)
+            mock_factory.return_value = mock_orch
+
+            result = run_fix(runner, translation_file, original_file)
+
+            assert "completado" in result.output.lower()
+            assert "revisión" in result.output.lower()
+
+    def test_fix_valida_archivos(self, runner, tmp_path):
+        missing = tmp_path / "missing.txt"
+        existing = tmp_path / "ok.txt"
+        existing.write_text("ok")
+
+        result = run_fix(runner, missing, original=existing)
+        assert result.exit_code == 1
+        assert "no encontrado" in result.output.lower()
+
+    def test_fix_sin_original_solo_valida_translation(self, runner, tmp_path):
+        missing = tmp_path / "missing.txt"
+        result = run_fix(runner, missing, original=None)
+        assert result.exit_code == 1
+        assert "no encontrado" in result.output.lower()
 
 
 # ------------------------------------------------------------------
@@ -219,20 +329,33 @@ class TestManejoErrores:
             assert result.exit_code == 1
             assert "issue" in result.output.lower()
 
+    def test_fix_book_already_done_muestra_confirmacion(
+        self, runner, translation_file, original_file
+    ):
+        with patch("tenlib.cli.build_orchestrator") as mock_factory:
+            mock_orch = MagicMock()
+            mock_orch.run_fix.side_effect = BookAlreadyDoneError("Ya procesado")
+            mock_factory.return_value = mock_orch
+
+            result = runner.invoke(
+                main,
+                [
+                    "fix",
+                    "--translation", str(translation_file),
+                    "--original", str(original_file),
+                    "--to", "es",
+                ],
+                input="N\n",
+            )
+
+            assert "ya fue corregido" in result.output.lower()
+
 
 # ------------------------------------------------------------------
 # Stubs
 # ------------------------------------------------------------------
 
 class TestStubs:
-
-    def test_fix_imprime_proximamente(self, runner, tmp_path):
-        result = runner.invoke(main, [
-            "fix",
-            "--book",      str(tmp_path / "a.txt"),
-            "--reference", str(tmp_path / "b.txt"),
-        ])
-        assert "próximamente" in result.output.lower() or "fase" in result.output.lower()
 
     def test_review_imprime_proximamente(self, runner, tmp_path):
         result = runner.invoke(main, ["review", "--book", str(tmp_path / "a.txt")])

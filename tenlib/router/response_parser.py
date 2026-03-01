@@ -7,13 +7,29 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Captura JSON dentro de bloques ```json ... ``` o ``` ... ```
+# Usa {.*} greedy (no {.*?}) para soportar JSON con objetos anidados.
 _MARKDOWN_JSON_RE = re.compile(
-    r"```(?:json)?\s*(\{.*?\})\s*```",
+    r"```(?:json)?\s*(\{.*\})\s*```",
     re.DOTALL,
 )
 
-# Captura el primer objeto JSON que aparezca en el texto
+# Captura el primer objeto JSON en texto libre — greedy para JSON anidado.
 _BARE_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# Extrae el texto bajo un encabezado markdown tipo "## Traducción" o "## Translation".
+# Útil cuando el modelo ignora el formato JSON y responde con secciones markdown.
+_MD_TRANSLATION_RE = re.compile(
+    r"^#{1,3}\s*(?:Traducci[oó]n|Translation)\s*\n+([\s\S]+?)(?=\n#{1,3}\s|\Z)",
+    re.MULTILINE | re.IGNORECASE,
+)
+_MD_CONFIDENCE_RE = re.compile(
+    r"^#{1,3}\s*(?:Confianza|Confidence)\s*\n+\s*([0-9.]+)",
+    re.MULTILINE | re.IGNORECASE,
+)
+_MD_NOTES_RE = re.compile(
+    r"^#{1,3}\s*(?:Notas?|Notes?)\s*\n+([\s\S]+?)(?=\n#{1,3}\s|\Z)",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 def parse_model_response(raw_text: str, model_name: str) -> dict:
@@ -54,17 +70,78 @@ def parse_model_response(raw_text: str, model_name: str) -> dict:
             logger.warning("%s devolvió JSON con texto extra alrededor", model_name)
             return _validate_and_fill(result)
 
-    # Intento 4: recuperación de emergencia
-    # El texto entero se trata como la traducción
+    # Intento 4: respuesta markdown con secciones tipo "## Traducción"
+    # Sucede cuando el modelo ignora el formato JSON y responde con headers.
+    md_result = _try_parse_markdown_sections(text)
+    if md_result:
+        logger.warning(
+            "%s respondió con secciones markdown en lugar de JSON — considera reforzar el prompt",
+            model_name,
+        )
+        return md_result
+
+    # Intento 5: recuperación de emergencia
+    # Limpia marcadores markdown antes de usar el texto completo como traducción.
     logger.error(
         "%s devolvió respuesta no parseable. Usando texto como traducción con confidence 0.3",
         model_name,
     )
     return {
-        "translation": text,
+        "translation": _strip_markdown(text),
         "confidence":  0.3,
         "notes":       f"ADVERTENCIA: respuesta no estructurada de {model_name}. Requiere revisión manual.",
     }
+
+
+def _try_parse_markdown_sections(text: str) -> Optional[dict]:
+    """
+    Extrae traducción, confianza y notas de una respuesta con headers markdown.
+    Solo activa si se detecta al menos la sección de traducción.
+    """
+    translation_match = _MD_TRANSLATION_RE.search(text)
+    if not translation_match:
+        return None
+
+    translation = translation_match.group(1).strip()
+    if not translation:
+        return None
+
+    confidence = 0.6  # default razonable para respuestas bien estructuradas
+    confidence_match = _MD_CONFIDENCE_RE.search(text)
+    if confidence_match:
+        try:
+            confidence = float(confidence_match.group(1))
+            confidence = max(0.0, min(1.0, confidence))
+        except ValueError:
+            pass
+
+    notes = "Sin notas."
+    notes_match = _MD_NOTES_RE.search(text)
+    if notes_match:
+        notes = notes_match.group(1).strip() or notes
+
+    return {
+        "translation": translation,
+        "confidence":  confidence,
+        "notes":       notes,
+    }
+
+
+def _strip_markdown(text: str) -> str:
+    """
+    Elimina marcadores markdown comunes del texto para limpiar el fallback.
+    Quita encabezados (#), negritas (**), cursivas (*/_), bloques de código.
+    """
+    # Eliminar bloques de código
+    text = re.sub(r"```[^\n]*\n?", "", text)
+    # Eliminar encabezados
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Eliminar negritas e itálicas
+    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
+    text = re.sub(r"_{1,2}(.+?)_{1,2}", r"\1", text)
+    # Eliminar líneas en blanco múltiples
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _try_parse(text: str) -> Optional[dict]:
