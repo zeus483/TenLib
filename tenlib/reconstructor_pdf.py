@@ -57,7 +57,7 @@ class PdfReconstructor:
 
         # Construir mapa: source_section → lista de textos traducidos (en orden)
         section_texts: dict[int, list[str]] = {}
-        for chunk in sorted(chunks, key=lambda c: c.index):
+        for chunk in sorted(chunks, key=lambda c: c.chunk_index):
             text = self._resolve_chunk_text(chunk)
             section = chunk.source_section
             section_texts.setdefault(section, []).append(text)
