@@ -1,415 +1,450 @@
 # TenLib
-Es un proyecto open Source en donde busco crear un agente editorial con IA para hacer traducciones, mejorar traducciones, ser copiloto al escribir un libro entre otras cosas, esto nace de mi gusto por la lectura japonesa y las pocas traducciones a novelas ligeras que encuentro y ademas mi gusto por la literatura, ahora si el README hecho por IA.
-## Notas del Autor:
+TenLib es un editor literario agéntico orientado a traducción y corrección de libros largos con IA.
 
-No se bien ingles pero lo estoy practicando por lo que si ven errores semanticos en el codigo o en los commits una disculpa de antemano.
+Su objetivo principal es resolver el problema que aparece cuando un libro no cabe completo en contexto: mantener continuidad, voz narrativa, nombres, glosario y decisiones de estilo a través de cientos de chunks sin disparar el consumo de tokens.
 
-# 📚 TenLib
+## Nota del autor
+No sé bien inglés y lo sigo practicando. Si ves errores semánticos en el código, los commits o la documentación, una disculpa de antemano.
 
-> Un editor literario agéntico de código abierto. Traduce, corrige y escribe libros completos con IA, preservando coherencia y optimizando el uso de tokens.
+## Qué hace hoy
 
----
+- Traduce libros completos en `.txt`, `.md`, `.epub` y `.pdf`
+- Corrige traducciones existentes con referencia al original
+- Mejora estilo, sintaxis y legibilidad de una traducción aun sin tener el original
+- Mantiene una `Book Bible` persistente por libro
+- Comprime contexto antes de cada llamada para reducir tokens
+- Rota entre modelos configurados y reanuda automáticamente si se corta el proceso
+- Guarda progreso, chunks, Bible y consumo en SQLite local
 
-## ¿Por qué existe esto?
+## Estado actual
 
-Los libros tienen entre 80.000 y 150.000 palabras. Ningún modelo de IA cabe eso en contexto de una sola vez. Si lo partes sin criterio, pierdes coherencia: los personajes cambian de nombre entre capítulos, el tono varía, los modismos se traducen de formas distintas en cada fragmento.
+TenLib ya tiene implementado el pipeline principal:
 
-Las soluciones actuales (DeepL, plugins de Calibre, pegar fragmentos en ChatGPT) tratan cada chunk como un texto nuevo, sin memoria del resto del libro. **TenLib resuelve eso** construyendo una memoria editorial persistente que viaja con cada fragmento a lo largo de todo el proceso.
+- `translate`
+- `fix` con `--original`
+- `fix` sin `--original` (`fix-style`)
+- persistencia versionada de `Book Bible`
+- compresión de contexto por chunk
+- prompts endurecidos para salida JSON estricta
+- reanudación automática
+- parser y reconstrucción para PDF con soporte opcional de `pymupdf`
+- suite automatizada de tests
 
-Además, la mayoría de personas con acceso a múltiples IAs (Claude Pro, GPT Plus, Gemini Pro) no puede aprovecharlos en conjunto. TenLib los unifica en un solo pipeline con rotación automática cuando se agotan los tokens del día.
+Los comandos `review` y `write` existen como stubs de roadmap, pero todavía no están implementados.
 
----
+## Por qué existe
 
-## Características principales
+Las soluciones típicas para traducir libros con IA tratan cada fragmento como si fuera independiente. Eso rompe continuidad:
 
-- **Chunking semántico** — divide por escenas y capítulos, no por tamaño fijo
-- **Book Bible** — memoria editorial persistente: glosario, personajes, voz narrativa, decisiones de estilo
-- **Compresión de contexto** — solo el contexto relevante viaja en cada llamada (hasta 40% menos tokens)
-- **Multi-modelo con rotación** — Claude, GPT y Gemini en un solo pipeline con failover automático
-- **Reanudación automática** — si el proceso se interrumpe, continúa desde donde quedó
-- **Control de calidad** — detector de inconsistencias y cola de revisión humana
-- **Múltiples modos** — traducción, corrección de traducciones, ajuste de estilo, co-autoría
+- personajes que cambian de nombre
+- tono narrativo inconsistente
+- términos del mundo traducidos de formas distintas
+- decisiones de estilo que se olvidan entre capítulos
 
----
+TenLib intenta resolver eso con una memoria editorial viva y persistente que acompaña cada chunk.
 
 ## Modos de operación
 
+### 1. Traducir un libro
+
 ```bash
-# Traducir un libro de inglés a español
 tenlib translate --book libro.epub --from en --to es
-
-# Corregir o mejorar una traducción existente con el original como referencia
-tenlib fix-translation --book traduccion.epub --reference original.epub
-
-# Abrir la interfaz de revisión humana para un libro procesado
-tenlib review --book mi_libro
-
-# Modo co-autor: desarrollar una idea hasta un libro completo
-tenlib write --outline mi_idea.txt
 ```
 
----
+Opcionalmente puedes controlar el tamaño de chunk:
+
+```bash
+tenlib translate --book libro.pdf --from ja --to es --chunk-size large
+```
+
+Valores disponibles:
+
+- `standard` → 800-2000 tokens
+- `large` → 1200-3500 tokens
+- `xlarge` → 2000-5000 tokens
+
+### 2. Corregir una traducción con el original como referencia
+
+```bash
+tenlib fix \
+  --translation traduccion.epub \
+  --original original.epub \
+  --from en \
+  --to es
+```
+
+Este modo no traduce desde cero si no hace falta: compara original y borrador, corrige errores de sentido, mejora fluidez y respeta la `Book Bible`.
+
+### 3. Mejorar una traducción sin tener el original
+
+```bash
+tenlib fix \
+  --translation traduccion_mala.txt \
+  --to es
+```
+
+Este es el modo `fix-style`: mejora sintaxis, puntuación, cohesión y naturalidad sin inventar contenido nuevo.
+
+### 4. Comandos reservados para fases siguientes
+
+```bash
+tenlib review --book mi_libro
+tenlib write --outline idea.txt
+```
+
+Hoy solo muestran mensaje de "próximamente".
+
+## CLI real
+
+Comandos disponibles actualmente:
+
+- `tenlib translate`
+- `tenlib fix`
+- `tenlib review`
+- `tenlib write`
+
+Formatos aceptados por la CLI:
+
+- `.txt`
+- `.md`
+- `.epub`
+- `.pdf`
 
 ## Arquitectura
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  GRADIO UI / CLI                    │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│                  ORCHESTRATOR                       │
-│   Gestiona el pipeline · Coordina módulos           │
-│   Controla flujo de chunks · Maneja errores         │
-└──────┬───────────────┬───────────────┬──────────────┘
-       │               │               │
-┌──────▼──────┐ ┌──────▼──────┐ ┌─────▼───────────────┐
-│    BOOK     │ │   CONTEXT   │ │      MODEL          │
-│  PROCESSOR  │ │   ENGINE    │ │      ROUTER         │
-│             │ │             │ │                     │
-│ · Parse     │ │ · Book Bible│ │ · Claude            │
-│ · Chunk     │ │ · Compress  │ │ · GPT               │
-│ · Reconstruct│ │ · Update   │ │ · Gemini            │
-└─────────────┘ └─────────────┘ │ · Token tracker     │
-                                └─────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│                QUALITY CHECKER                      │
-│   Detector de inconsistencias · Comparador          │
-│   Cola de revisión humana · Marcador de confianza   │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│              STORAGE (SQLite local)                 │
-│   books · chunks · bible · quota_usage              │
-│   /output → EPUB, DOCX, TXT reconstruidos           │
-└─────────────────────────────────────────────────────┘
+```text
+CLI
+  -> Orchestrator
+      -> ParserFactory
+      -> Chunker
+      -> Router
+      -> BibleExtractor
+      -> BibleCompressor
+      -> Repository (SQLite)
+      -> Reconstructor / PdfReconstructor
 ```
 
----
+## Pipeline
 
-## Módulos en detalle
+### Traducción
 
-### 1. Book Processor
+1. Se parsea el libro
+2. Se divide en chunks semánticos
+3. Se carga o inicializa la `Book Bible`
+4. Se comprime la Bible al contexto relevante del chunk
+5. Se construye el prompt de traducción
+6. El `Router` elige el mejor modelo disponible
+7. Se guarda el chunk traducido
+8. Se actualiza la Bible
+9. Se reconstruye el output final
 
-Convierte el libro crudo en chunks procesables y, al final, reconstruye el archivo de salida.
+### Fix con original
 
-**Chunking semántico:** no divide por cantidad fija de tokens. Detecta primero capítulos, luego escenas (separadores `***`, saltos dobles, cambios de POV indicados por el autor). Cada chunk queda entre 800 y 2000 tokens — suficiente para que el modelo tenga contexto interno, pequeño para caber junto a la Book Bible en el prompt.
+1. Se parsean original y traducción existente
+2. Se chunkea el original
+3. La traducción se alinea a esos límites
+4. Cada llamada recibe original + traducción existente
+5. El modelo corrige, no retraduce ciegamente
+6. La Bible se actualiza igual que en `translate`
 
-**Formatos soportados (v1):**
-- `.txt` — texto plano
-- `.epub` — via `ebooklib`
-- `.docx` — via `python-docx`
+### Fix sin original
 
-> PDF se deja para versiones futuras por la complejidad del layout.
+1. Se parsea la traducción existente
+2. Se chunkea
+3. El modelo pule el texto con foco en legibilidad y consistencia
+4. La Bible se actualiza con heurísticas locales y contexto persistente
 
----
+## Book Bible
 
-### 2. Context Engine *(el corazón del sistema)*
+La `Book Bible` es la memoria editorial persistente del libro. Se guarda versionada en SQLite y hoy contiene:
 
-Mantiene y administra la **Book Bible**: un objeto JSON vivo que representa la memoria editorial del libro completo.
+- `voice`
+- `decisions`
+- `glossary`
+- `characters`
+- `last_scene`
+
+Ejemplo:
 
 ```json
 {
-  "meta": {
-    "title": "El nombre del viento",
-    "source_lang": "en",
-    "target_lang": "es",
-    "voice": "tercera persona, pasado, tono épico-intimista",
-    "decisions": [
-      "tutear al lector",
-      "mantener 'Naming' sin traducir",
-      "conservar 'Chandrian' en lugar de hispanizarlo"
-    ]
-  },
+  "voice": "narrador en tercera persona, tiempo pasado",
+  "decisions": [
+    "mantener tono sobrio en los diálogos",
+    "no hispanizar nombres propios fijados"
+  ],
   "glossary": {
-    "Kvothe": "Kvothe",
-    "Sympathy": "Simpatía",
-    "the Chandrian": "los Chandrian",
-    "Naming": "Naming"
+    "Rimuru": "Rimuru",
+    "Tempest": "Tempestad"
   },
   "characters": {
-    "Kvothe": "protagonista, voz activa, habla directo y sin rodeos",
-    "Chronicler": "escriba, tono formal y observador"
+    "Rimuru": "voz calmada y estratégica",
+    "Benimaru": "tono firme y militar"
   },
-  "continuity": {
-    "last_scene": "Kvothe acaba de llegar a la Universidad",
-    "open_threads": [
-      "mencionó a su madre en cap 3, hilo sin resolver"
-    ]
-  }
+  "last_scene": "El consejo se reunió para discutir la guerra inminente."
 }
 ```
 
-**Antes de cada chunk:** el motor comprime la Biblia a lo estrictamente relevante para ese fragmento. Si el chunk no contiene al Chronicler, su entrada no va en el prompt. En libros con elencos grandes esto reduce hasta un 40% el uso de tokens.
+### Qué mejoró recientemente
 
-**Después de cada chunk:** el motor actualiza la Biblia con nuevas decisiones detectadas (términos nuevos, decisiones de estilo tomadas por el modelo, continuity updates).
+- la Bible se inicializa y persiste desde el inicio del pipeline
+- se actualiza en cada chunk procesado
+- no se marca un libro como `done` si aún quedan chunks pendientes
+- `decisions` se deduplican y se recortan para controlar crecimiento
+- `last_scene` se trunca para no inflar contexto
+- se endureció la detección de personajes para evitar ruido
 
-La Biblia se versiona en SQLite — puedes revertir a cualquier estado anterior si una decisión automática fue incorrecta.
+## Detección de personajes
 
----
+Uno de los puntos más delicados era que la Bible podía terminar agregando como personaje casi cualquier palabra capitalizada.
 
-### 3. Model Router
+Eso ya se endureció:
 
-Gestiona los tres modelos de forma transparente. El Orchestrator no sabe ni le importa qué modelo procesó cada chunk.
+- no se depende solo de mayúsculas
+- se usan pistas contextuales como verbos de habla, verbos de acción y títulos
+- se filtran pronombres, conectores y ruido editorial
+- se preservan personajes ya conocidos aunque aparezcan con poca evidencia
+- nombres válidos como `Ultima` no se bloquean por listas frágiles de stopwords
 
-**Configuración** en `~/.tenlib/config.yaml`:
+Esto bajó ruido y también reduce tokens en prompts posteriores.
+
+## Compresión de contexto
+
+Antes de cada llamada, la Bible se comprime:
+
+- glosario: solo términos relevantes al chunk
+- personajes: solo personajes relevantes al chunk
+- decisiones: solo una ventana reciente
+- `last_scene`: truncado
+
+El objetivo es mantener continuidad sin enviar toda la memoria completa en cada prompt.
+
+## Prompts
+
+Los prompts actuales se endurecieron para ser más robustos entre modelos:
+
+- salida JSON estricta
+- prohibición explícita de markdown
+- instrucciones separadas por modo (`translate`, `fix`, `fix-style`)
+- calibración más clara de `confidence`
+- mayor énfasis en preservar estructura, tono y consistencia
+
+Formato esperado del modelo:
+
+```json
+{
+  "notes": "resumen breve de decisiones",
+  "confidence": 0.82,
+  "translation": "texto final"
+}
+```
+
+## Router y modelos
+
+Hoy el router soporta adaptadores configurables para:
+
+- `gemini`
+- `claude`
+
+La configuración vive por defecto en `~/.tenlib/config.yaml`.
+
+Ejemplo:
 
 ```yaml
 models:
-  - name: claude
-    type: api          # 'api' o 'pro' (plan de suscripción)
-    priority: 1
-    daily_token_limit: 100000
-    api_key: ${ANTHROPIC_API_KEY}
-
   - name: gemini
-    type: pro
+    priority: 1
+    daily_token_limit: 1000000
+    api_key: ${GEMINI_API_KEY}
+    timeout_seconds: 60
+    temperature: 0.3
+
+  - name: claude
     priority: 2
-    daily_token_limit: 80000
-
-  - name: gpt
-    type: plus
-    priority: 3
-    daily_token_limit: 80000
+    daily_token_limit: 10000000
+    api_key: ${ANTHROPIC_API_KEY}
+    timeout_seconds: 60
+    temperature: 0.3
 ```
 
-**Lógica de rotación:**
-1. Intenta el modelo de mayor prioridad disponible
-2. Si recibe error 429 (rate limit) o supera el límite configurado → pasa al siguiente
-3. Si todos están agotados → pausa y notifica al usuario con tiempo estimado de espera
-4. Cada chunk registra en SQLite qué modelo lo procesó (importante para auditoría y consistencia)
+Lógica general:
 
----
+1. intenta el modelo de mayor prioridad disponible
+2. si se agota quota o falla, rota al siguiente
+3. si todos fallan, el pipeline queda pausado
+4. al reejecutar el mismo comando, TenLib reanuda desde donde quedó
 
-### 4. Quality Checker
+## Persistencia
 
-Corre en paralelo al pipeline principal, no lo bloquea.
+Todo se guarda en SQLite local:
 
-**Detecta automáticamente:**
-- El mismo término fuente traducido de dos formas distintas (cruza contra el glosario)
-- Cambio de tiempo verbal entre chunks consecutivos
-- Nombres propios que aparecen sin estar en el glosario (posible error o término nuevo)
-- Fragmentos donde el propio modelo reportó baja confianza
+- `books`
+- `chunks`
+- `bible`
+- `quota_usage`
 
-**Confianza del modelo:** cada llamada al modelo devuelve un JSON estructurado:
+Esto permite:
 
-```json
-{
-  "translation": "texto traducido aquí...",
-  "confidence": 0.82,
-  "notes": "expresión idiomática 'under the weather' — opté por 'no estar bien', pero podría ser 'estar pachuco' según el registro"
-}
+- reanudar procesos
+- versionar la Bible
+- auditar qué modelo procesó cada chunk
+- reconstruir output aunque haya chunks flaggeados
+
+## Reconstrucción de salida
+
+### TXT / MD / EPUB
+
+La salida estándar hoy se reconstruye como `.txt`.
+
+Si un chunk queda `flagged` sin traducción final, se inserta el texto original con una marca visible:
+
+```text
+[⚠ PENDIENTE DE REVISIÓN]
 ```
 
-Los fragmentos con `confidence < 0.75` o con flags del checker van a una **cola de revisión humana** visible en la UI.
+### PDF
 
----
+Si trabajas con PDF y tienes `pymupdf`, TenLib puede:
 
-### 5. Storage
+- extraer texto desde PDF
+- reconstruir un PDF de salida intentando preservar imágenes e ilustraciones
 
-Todo en SQLite local. Sin dependencias externas, sin nube obligatoria.
+Si `pymupdf` no está instalado, el sistema cae de vuelta a salida `.txt`.
 
-```sql
--- Esquema principal
+## Evaluación de Bible y prompts
 
-CREATE TABLE books (
-    id INTEGER PRIMARY KEY,
-    title TEXT,
-    source_lang TEXT,
-    target_lang TEXT,
-    mode TEXT,           -- 'translate', 'fix', 'write'
-    status TEXT,         -- 'in_progress', 'review', 'done'
-    created_at TIMESTAMP
-);
+Se agregó un evaluador reproducible para comparar una referencia buena contra una versión mala o candidata:
 
-CREATE TABLE chunks (
-    id INTEGER PRIMARY KEY,
-    book_id INTEGER,
-    chunk_index INTEGER,
-    original TEXT,
-    translated TEXT,
-    model_used TEXT,
-    confidence REAL,
-    status TEXT,         -- 'pending', 'done', 'flagged', 'reviewed'
-    FOREIGN KEY (book_id) REFERENCES books(id)
-);
+- extracción de personajes
+- cobertura y ruido
+- métricas `precision`, `recall`, `f1`
+- presión de contexto de la Bible en prompts
 
-CREATE TABLE bible (
-    id INTEGER PRIMARY KEY,
-    book_id INTEGER,
-    version INTEGER,
-    content_json TEXT,
-    updated_at TIMESTAMP
-);
+Script:
 
-CREATE TABLE quota_usage (
-    model TEXT,
-    date TEXT,
-    tokens_used INTEGER,
-    PRIMARY KEY (model, date)
-);
+`scripts/eval_bible_pair.py`
+
+Uso:
+
+```bash
+venv/bin/python scripts/eval_bible_pair.py \
+  --good "ejemplos_entrenamiento/CanisLycaon] Tensei Shitara Slime Datta Ken Vol 21 [Prólogo].txt" \
+  --bad "ejemplos_entrenamiento/prologo_malo.txt"
 ```
 
-**Reanudación automática:** si el proceso se interrumpe, al reanudarlo el Orchestrator consulta `WHERE status = 'pending'` y continúa desde ahí. No se reprocesa nada.
+Este evaluador se agregó para poder mejorar heurísticas de Bible y calibrar prompts sin hardcodear reglas específicas de un libro.
 
----
+## Instalación
 
-## Roadmap de desarrollo
-
-El proyecto se construye en 4 fases para tener algo funcional desde el primer sprint.
-
-### Fase 1 — MVP (1-2 semanas)
-> Objetivo: pipeline funcional de extremo a extremo con un modelo
-
-- [ ] Book Processor: parse de TXT y EPUB, chunking semántico básico
-- [ ] Llamada a un modelo (Claude API) con prompt de traducción
-- [ ] Reconstrucción del archivo de salida en TXT
-- [ ] Storage SQLite básico (books + chunks)
-- [ ] CLI mínimo: `tenlib translate --book X --from en --to es`
-
-**Criterio de éxito:** traducir un libro completo de 100.000 palabras de principio a fin, con output coherente y reanudable.
-
----
-
-### Fase 2 — Context Engine (1-2 semanas)
-> Objetivo: la Book Bible entra en el pipeline
-
-- [ ] Estructura JSON de la Book Bible
-- [ ] Extracción automática de glosario en el primer chunk
-- [ ] Compresión de contexto por chunk
-- [ ] Actualización incremental de la Biblia
-- [ ] Versionado de la Biblia en SQLite
-
-**Criterio de éxito:** mismo libro traducido en Fase 1, ahora con consistencia de nombres y términos a lo largo de todo el texto.
-
----
-
-### Fase 3 — Model Router (1 semana)
-> Objetivo: los tres modelos en un solo pipeline
-
-- [ ] Abstracción unificada de llamadas (Claude / GPT / Gemini)
-- [ ] Configuración de quota por modelo en YAML
-- [ ] Rotación automática con failover
-- [ ] Tracking de tokens en SQLite
-- [ ] Soporte para planes Pro (sin API key) vía automatización ligera
-
-**Criterio de éxito:** procesar un libro usando los tres modelos en rotación sin intervención manual.
-
----
-
-### Fase 4 — Quality + UI (2 semanas)
-> Objetivo: producto completo y usable por otros
-
-- [ ] Quality Checker con detección de inconsistencias
-- [ ] Cola de revisión humana
-- [ ] UI Gradio: progreso en tiempo real, revisión de chunks, edición de la Biblia
-- [ ] Modo `fix-translation` (corrección de traducción existente)
-- [ ] Modo `write` (co-autoría con outline)
-- [ ] Exportación a EPUB y DOCX
-- [ ] Documentación de usuario
-
----
-
-## Stack tecnológico
-
-| Componente | Tecnología |
-|---|---|
-| Lenguaje | Python 3.11+ |
-| UI | Gradio |
-| Storage | SQLite (via `sqlite3` stdlib) |
-| Parse EPUB | `ebooklib` |
-| Parse DOCX | `python-docx` |
-| Claude | `anthropic` SDK |
-| GPT | `openai` SDK |
-| Gemini | `google-generativeai` SDK |
-| CLI | `click` |
-| Config | `PyYAML` |
-
----
-
-## Instalación (Fase 1)
+### Base
 
 ```bash
 git clone https://github.com/zeus483/TenLib.git
-cd tenlib
+cd TenLib
 
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 
-pip install -r requirements.txt
-
-# Configurar modelos
-cp config.example.yaml ~/.tenlib/config.yaml
-# Editar el archivo con tus API keys o configuración de planes Pro
+pip install -e .
 ```
 
----
+### Dependencias opcionales
+
+Para PDF:
+
+```bash
+pip install pymupdf
+```
+
+## Configuración
+
+1. copia la plantilla:
+
+```bash
+mkdir -p ~/.tenlib
+cp config.example.yaml ~/.tenlib/config.yaml
+```
+
+2. define tus variables de entorno en `.env` o en tu shell:
+
+```bash
+export GEMINI_API_KEY=tu_key
+export ANTHROPIC_API_KEY=tu_key
+```
+
+TenLib carga `.env` automáticamente al arrancar.
+
+También puedes apuntar a otro config con:
+
+```bash
+export TENLIB_CONFIG_PATH=/ruta/a/config.yaml
+```
+
+## Tests
+
+Ejecutar toda la suite:
+
+```bash
+venv/bin/pytest -q
+```
+
+Ejecutar solo evaluación de contexto/Bible:
+
+```bash
+venv/bin/pytest -q tests/context
+```
 
 ## Estructura del proyecto
 
 ```text
 tenlib/
-├── config.example.yaml         # Plantilla de configuración de modelos
-├── requirements.txt            # Dependencias del proyecto
-├── README.md                   # Documentación principal
-├── tenlib/                     # Código fuente principal
-│   ├── __init__.py
-│   ├── factory.py              # Ensamblador de dependencias (DI)
-│   ├── orchestrator.py         # Coordinador principal del pipeline
-│   ├── reconstructor.py        # Generador del archivo final traducido
-│   ├── processor/              # Parseo y segmentación de libros
-│   │   ├── chunker/            # Lógica de división semántica (Chunks)
-│   │   └── parsers/            # Adaptadores para TXT, EPUB, etc.
-│   ├── router/                 # Enrutamiento de modelos de IA
-│   │   ├── base.py             # Interfaz abstracta para modelos
-│   │   ├── claude.py           # Adaptador Anthropic
-│   │   ├── gemini.py           # Adaptador Google
-│   │   ├── prompt_builder.py   # Constructor dinámico de prompts
-│   │   ├── response_parser.py  # Procesador de respuestas JSON
-│   │   └── router.py           # Lógica de rotación y failover
-│   └── storage/                # Persistencia local (SQLite)
-│       ├── db.py               # Configuración base de datos
-│       ├── models.py           # Data classes del dominio persistido
-│       └── repository.py       # Capa de acceso a datos (CRUD)
-└── tests/                      # Suite automatizada de pruebas (pytest)
-    ├── processor/              # Tests de chunkers y parsers
-    ├── router/                 # Tests de parseo JSON y ruteo
-    ├── storage/                # Tests de base de datos
-    └── test_orchestrator.py    # Tests de integración del pipeline
+├── cli.py
+├── factory.py
+├── orchestrator.py
+├── reconstructor.py
+├── reconstructor_pdf.py
+├── context/
+│   ├── bible.py
+│   ├── character_detector.py
+│   ├── compressor.py
+│   └── extractor.py
+├── processor/
+│   ├── chunker/
+│   └── parsers/
+├── router/
+│   ├── claude.py
+│   ├── gemini.py
+│   ├── prompt_builder.py
+│   ├── response_parser.py
+│   └── router.py
+└── storage/
+    ├── db.py
+    ├── models.py
+    └── repository.py
 ```
 
----
+## Roadmap
 
-## Principios de diseño
+### En progreso
 
-**Local-first.** Todos los datos del libro, la Biblia y el progreso viven en tu máquina. Ningún dato sale salvo las llamadas a los modelos que tú mismo configuras.
+- mejorar aún más precisión de personajes y glosario
+- seguir bajando tokens de Bible sin perder continuidad
+- robustecer evaluación automática con más casos reales
 
-**Reanudable por defecto.** Cualquier proceso puede interrumpirse y retomarse. El estado siempre está en disco.
+### Siguiente fase natural
 
-**Modelo-agnóstico.** Agregar un modelo nuevo es implementar una clase que hereda de `BaseModel`. El resto del sistema no cambia.
+- exportación real a EPUB
+- exportación real a DOCX
+- revisión humana
+- UI
+- modo `write`
 
-**La calidad primero.** El objetivo no es traducir rápido sino traducir bien. La velocidad es una consecuencia de optimizar tokens, no el fin.
+## Agradecimientos
 
----
+Gracias a **CanisLycaon** por sus traducciones, que se usaron como material de referencia para evaluar y mejorar la `Book Bible`, ajustar prompts y calibrar heurísticas de consistencia editorial.
 
-## Contribuir
-
-El proyecto está en construcción activa. Las contribuciones más valiosas en este momento son:
-
-- Parsers para nuevos formatos (PDF, RTF, ODT)
-- Adaptadores para nuevos modelos
-- Mejoras al algoritmo de chunking semántico
-- Prompts de sistema mejor calibrados para distintos géneros literarios
-
-Abre un issue antes de un PR grande para alinear dirección.
-
----
+Ese material se utilizó como referencia de calidad dentro del proyecto para comparar salidas y reducir ruido en contexto, no para hardcodear reglas específicas de una sola obra.
 
 ## Licencia
 
-MIT — libre para usar, modificar y distribuir.
-
----
-
-*TenLib nació de la frustración de leer libros en traducciones mediocres cuando la tecnología para hacerlo mejor ya existe. Solo faltaba juntarla bien.*
+MIT.
